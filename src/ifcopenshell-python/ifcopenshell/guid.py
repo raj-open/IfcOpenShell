@@ -72,7 +72,7 @@ def compress(
 
     # remove possible separators
     uuid = uuid.lower()
-    uuid = re.sub(pattern=r"\W", repl="", string=uuid);
+    uuid = re.sub(pattern=r"\W", repl="", string=uuid)
 
     # left-pad uuid with 0s
     n = len(uuid)
@@ -121,13 +121,15 @@ def split(uuid: str, /) -> str:
     xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
     ```
     """
-    return "-".join([
-        uuid[:8],
-        uuid[8:][:4],
-        uuid[12:][:4],
-        uuid[16:][:4],
-        uuid[20:],
-    ])
+    return "-".join(
+        [
+            uuid[:8],
+            uuid[8:][:4],
+            uuid[12:][:4],
+            uuid[16:][:4],
+            uuid[20:],
+        ]
+    )
 
 
 def new() -> str:
