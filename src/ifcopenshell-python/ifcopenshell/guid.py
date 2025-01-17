@@ -16,7 +16,8 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with IfcOpenShell.  If not, see <http://www.gnu.org/licenses/>.
 
-"""Reads and writes encoded GlobalIds
+"""
+Reads and writes encoded GlobalIds
 
 IFC entities may be identified using a unique ID (called a UUID or GUID). This
 128-bit label is often represented in the form
@@ -25,37 +26,147 @@ stored as a 22 character base 64 encoded string. This module lets you convert
 between these representations and generate new UUIDs.
 """
 
-import uuid
+# ----------------------------------------------------------------
+# IMPORTS
+# ----------------------------------------------------------------
+
+from uuid import uuid4
 import string
 
 from functools import reduce
 
-chars = string.digits + string.ascii_uppercase + string.ascii_lowercase + "_$"
+# ----------------------------------------------------------------
+# EXPORTS
+# ----------------------------------------------------------------
+
+__all__ = [
+    "compress",
+    "expand",
+    "split",
+    "new",
+]
+
+# ----------------------------------------------------------------
+# LOCAL CONSTANTS, VARIABLES
+# ----------------------------------------------------------------
+
+CHARS64 = string.ascii_uppercase + string.ascii_lowercase + string.digits + "_$"
+
+# ----------------------------------------------------------------
+# PUBLIC METHODS
+# ----------------------------------------------------------------
 
 
-def compress(g: str) -> str:
-    bs = [int(g[i : i + 2], 16) for i in range(0, len(g), 2)]
+def compress(uuid: str, /) -> str:
+    """
+    Converts a hex-encoded encoded GUID
+    to a base64-encoded UUID.
+    """
+    n = len(uuid)
+    L_hex = n % 6
+    guid = ""
 
-    def b64(v, l=4):
-        return "".join([chars[(v // (64**i)) % 64] for i in range(l)][::-1])
+    while len(uuid) > 0:
+        block, uuid = uuid[:L_hex], uuid[L_hex:]
+        num = int(block, 16)
+        L_64 = 4 * (L_hex // 6)
+        guid += int_to_repr(num, padding=L_64)
+        L_hex = 6
 
-    return "".join([b64(bs[0], 2)] + [b64((bs[i] << 16) + (bs[i + 1] << 8) + bs[i + 2]) for i in range(1, 16, 3)])
-
-
-def expand(g: str) -> str:
-    def b64(v):
-        return reduce(lambda a, b: a * 64 + b, map(lambda c: chars.index(c), v))
-
-    bs = [b64(g[0:2])]
-    for i in range(5):
-        d = b64(g[2 + 4 * i : 6 + 4 * i])
-        bs += [(d >> (8 * (2 - j))) % 256 for j in range(3)]
-    return "".join(["%02x" % b for b in bs])
+    return guid
 
 
-def split(g: str) -> str:
-    return "{%s-%s-%s-%s-%s}" % (g[:8], g[8:12], g[12:16], g[16:20], g[20:])
+def expand(guid: str, /) -> str:
+    """
+    Converts a base64-encoded GUID
+    to a hex-encoded UUID.
+    """
+    n = len(guid)
+    L_64 = n % 4
+    uuid = ""
+
+    while len(guid) > 0:
+        block, guid = guid[:L_64], guid[L_64:]
+        L_hex = 6 * (L_64 // 4)
+        uuid += f"{repr_to_int(block):0{L_hex}x}"
+        L_64 = 4
+
+    return uuid
+
+
+def split(uuid: str, /) -> str:
+    """
+    Formats a 32-character hex-encoded UUID as
+    ```
+    xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    ```
+    """
+    return "-".join([
+        uuid[:8],
+        uuid[8:][:4],
+        uuid[12:][:4],
+        uuid[16:][:4],
+        uuid[20:],
+    ])
 
 
 def new() -> str:
-    return compress(uuid.uuid4().hex)
+    """
+    Generates a new UUID and returns
+    the corresponding base64 GUID representation.
+    """
+    uuid = uuid4().hex
+    guid = compress(uuid)
+    return guid
+
+# ----------------------------------------------------------------
+# PRIVATE METHODS
+# ----------------------------------------------------------------
+
+
+def repr_to_int(
+    s: str,
+    /,
+    *,
+    alphabet: str = CHARS64,
+) -> int:
+    """
+    Converts a number in a given base to an integer.
+    """
+    base = len(alphabet)
+    digits = map(lambda a: alphabet.index(a), s)
+    n = reduce(lambda x, y: base * x + y, digits, 0)
+    return n
+
+
+def int_to_repr(
+    n: int,
+    /,
+    *,
+    alphabet: str = CHARS64,
+    padding: int | None = None,
+) -> str:
+    """
+    Converts a positive integer to a number represented
+    as a sequence of "digits" defined from an alphabet.
+    """
+    base = len(alphabet)
+
+    # compute digits
+    digits = []
+    while n > 0:
+        digits.append(n % base)
+        n = n // base
+
+    # optional padding
+    if padding is not None and padding > 0:
+        digits = digits[:padding]
+        digits += [0] * (len(digits) - padding)
+
+    # reverse order for left-to-right reading
+    digits.reverse()
+
+    # encode as string using symbol-set
+    s = "".join(map(lambda digit: alphabet[digit], digits))
+
+    return s
