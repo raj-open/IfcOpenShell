@@ -30,10 +30,11 @@ between these representations and generate new UUIDs.
 # IMPORTS
 # ----------------------------------------------------------------
 
-from uuid import uuid4
-import string
-
+from base64 import b64decode
+from base64 import b64encode
 from functools import reduce
+import re
+from uuid import uuid4
 
 # ----------------------------------------------------------------
 # EXPORTS
@@ -50,46 +51,65 @@ __all__ = [
 # LOCAL CONSTANTS, VARIABLES
 # ----------------------------------------------------------------
 
-CHARS64 = string.ascii_uppercase + string.ascii_lowercase + string.digits + "_$"
+ALT_CHARS = b"_$"
 
 # ----------------------------------------------------------------
 # PUBLIC METHODS
 # ----------------------------------------------------------------
 
 
-def compress(uuid: str, /) -> str:
+def compress(
+    uuid: str,
+    /,
+    *,
+    alt_chars: bytes = ALT_CHARS,
+    remove_padding: bool = True,
+) -> str:
     """
     Converts a hex-encoded encoded GUID
     to a base64-encoded UUID.
     """
-    n = len(uuid)
-    L_hex = n % 6
-    guid = ""
 
-    while len(uuid) > 0:
-        block, uuid = uuid[:L_hex], uuid[L_hex:]
-        num = int(block, 16)
-        L_64 = 4 * (L_hex // 6)
-        guid += int_to_repr(num, padding=L_64)
-        L_hex = 6
+    # remove possible separators
+    uuid = uuid.lower()
+    uuid = re.sub(pattern=r"\W", repl="", string=uuid);
+
+    # left-pad uuid with 0s
+    n = len(uuid)
+    r = n % 2
+    n += 2 - r if r > 0 else 0
+    uuid = f"{uuid:0>{n}}"
+
+    # convert to standard base 64
+    uuid_bytes = bytes.fromhex(uuid)
+    guid = b64encode(uuid_bytes, altchars=alt_chars).decode()
+
+    # strip right-padding
+    if remove_padding:
+        guid = guid.rstrip("=")
 
     return guid
 
 
-def expand(guid: str, /) -> str:
+def expand(
+    guid: str,
+    /,
+    *,
+    alt_chars: bytes = ALT_CHARS,
+) -> str:
     """
     Converts a base64-encoded GUID
     to a hex-encoded UUID.
     """
-    n = len(guid)
-    L_64 = n % 4
-    uuid = ""
 
-    while len(guid) > 0:
-        block, guid = guid[:L_64], guid[L_64:]
-        L_hex = 6 * (L_64 // 4)
-        uuid += f"{repr_to_int(block):0{L_hex}x}"
-        L_64 = 4
+    # right-pad guid with "="
+    n = len(guid)
+    r = n % 4
+    n += 4 - r if r > 0 else 0
+    guid = f"{guid:=<{n}}"
+
+    # convert to hex
+    uuid = b64decode(guid, altchars=alt_chars).hex()
 
     return uuid
 
@@ -118,55 +138,3 @@ def new() -> str:
     uuid = uuid4().hex
     guid = compress(uuid)
     return guid
-
-# ----------------------------------------------------------------
-# PRIVATE METHODS
-# ----------------------------------------------------------------
-
-
-def repr_to_int(
-    s: str,
-    /,
-    *,
-    alphabet: str = CHARS64,
-) -> int:
-    """
-    Converts a number in a given base to an integer.
-    """
-    base = len(alphabet)
-    digits = map(lambda a: alphabet.index(a), s)
-    n = reduce(lambda x, y: base * x + y, digits, 0)
-    return n
-
-
-def int_to_repr(
-    n: int,
-    /,
-    *,
-    alphabet: str = CHARS64,
-    padding: int | None = None,
-) -> str:
-    """
-    Converts a positive integer to a number represented
-    as a sequence of "digits" defined from an alphabet.
-    """
-    base = len(alphabet)
-
-    # compute digits
-    digits = []
-    while n > 0:
-        digits.append(n % base)
-        n = n // base
-
-    # optional padding
-    if padding is not None and padding > 0:
-        digits = digits[:padding]
-        digits += [0] * (len(digits) - padding)
-
-    # reverse order for left-to-right reading
-    digits.reverse()
-
-    # encode as string using symbol-set
-    s = "".join(map(lambda digit: alphabet[digit], digits))
-
-    return s
